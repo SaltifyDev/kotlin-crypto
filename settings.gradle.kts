@@ -9,6 +9,6 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-include(":kotlin-bigint")
+include(":kotlin-math")
 
 rootProject.name = "kotlin-crypto"
