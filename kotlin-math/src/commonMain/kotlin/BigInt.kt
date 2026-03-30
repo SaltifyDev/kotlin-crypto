@@ -74,7 +74,7 @@ class BigInt {
 
                 cmp < 0 -> BigInt(
                     words = subtractWords(other.words, words),
-                    isNegative = other.isNegative,
+                    isNegative = !this.isNegative,
                 )
 
                 else -> ZERO
