@@ -82,6 +82,16 @@ class BigInt {
         }
     }
 
+    operator fun times(other: BigInt): BigInt {
+        if (this == ZERO || other == ZERO) {
+            return ZERO
+        }
+        return BigInt(
+            words = multiplyWords(this.words, other.words),
+            isNegative = this.isNegative xor other.isNegative,
+        )
+    }
+
     fun toString(radix: Int): String {
         TODO()
     }
@@ -89,7 +99,15 @@ class BigInt {
     override fun toString(): String = toString(10)
 
     override operator fun equals(other: Any?): Boolean {
-        TODO()
+        if (this === other) return true
+        if (other !is BigInt) return false
+
+        if (isNegative != other.isNegative) return false
+        if (words.size != other.words.size) return false
+        for (i in words.indices) {
+            if (words[i] != other.words[i]) return false
+        }
+        return true
     }
 
     override fun hashCode(): Int {
@@ -166,6 +184,44 @@ class BigInt {
                 size--
             }
             return dest.copyOf(size)
+        }
+
+        private fun multiplyWords(a: ULongArray, b: ULongArray): ULongArray {
+            val n = a.size + b.size
+            val dest = ULongArray(n)
+            for (i in a.indices) {
+                var carry = 0UL
+                for (j in b.indices) {
+                    val k = i + j
+                    val productInPlace = DWord.fromProduct(a[i], b[j])
+                    val sumInPlace = DWord.fromSum(dest[k], productInPlace.low)
+                    val sumWithCarry = DWord.fromSum(sumInPlace.low, carry)
+                    dest[k] = sumWithCarry.low
+
+                    val newCarry = DWord.fromSum(
+                        productInPlace.high,
+                        sumInPlace.high,
+                        sumWithCarry.high,
+                    ) // may exceed 2^64-1! must be presented in DWord
+                    carry = newCarry.low
+                    if (newCarry.high != 0UL) {
+                        dest.addWordAt(k + 2, newCarry.high)
+                    }
+                }
+                dest.addWordAt(i + b.size, carry)
+            }
+            return dest.normalized()
+        }
+
+        private fun ULongArray.addWordAt(index: Int, value: ULong) {
+            var i = index
+            var carry = value
+            while (carry != 0uL && i < size) {
+                val sum = DWord.fromSum(this[i], carry)
+                this[i] = sum.low
+                carry = sum.high
+                i++
+            }
         }
 
         private fun compareWords(a: ULongArray, b: ULongArray): Int {
