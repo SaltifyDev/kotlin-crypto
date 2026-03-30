@@ -7,6 +7,24 @@ import kotlin.test.assertEquals
 
 class BigIntTest {
     @Test
+    fun parsesDecimalAndHexStrings() {
+        assertEquals(BigInt.ZERO, BigInt("0"))
+        assertEquals(BigInt.ZERO, BigInt("0x0", 16))
+        assertEquals("-42", BigInt("-00042").toDecString())
+        assertEquals("42", BigInt("+00042").toDecString())
+        assertEquals("0x2a", BigInt("0x2a", 16).toHexString())
+        assertEquals("-0x2a", BigInt("-0x2a", 16).toHexString())
+        assertEquals(
+            "18446744073709551616",
+            BigInt("18446744073709551616").toDecString(),
+        )
+        assertEquals(
+            "0x10000000000000000",
+            BigInt("0x10000000000000000", 16).toHexString(),
+        )
+    }
+
+    @Test
     fun multipliesZeroAndSignedValues() {
         val value = BigInt(123456789)
 

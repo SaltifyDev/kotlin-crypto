@@ -35,6 +35,56 @@ class BigInt {
 
     constructor(value: Int) : this(value.toLong())
 
+    constructor(value: String, radix: Int) {
+        when (radix) {
+            10 -> {
+                val (isNegative, digits) = parseSignedDigits(value)
+                require(digits.all { it in '0'..'9' }) {
+                    "Invalid decimal string: $value"
+                }
+                var words = ulongArrayOf(0UL)
+                var index = 0
+                while (index < digits.length) {
+                    val chunkEnd = minOf(index + 9, digits.length)
+                    val chunk = digits.substring(index, chunkEnd)
+                    words = multiplyWordsByUInt(words, DECIMAL_CHUNK_POWERS[chunk.length])
+                    words = addUInt(words, chunk.toUInt())
+                    index = chunkEnd
+                }
+                this.words = words.normalized()
+                this.isNegative = isNegative && !(words.size == 1 && words[0] == 0UL)
+            }
+
+            16 -> {
+                val (isNegative, digits) = parseSignedDigits(value, allowHexPrefix = true)
+                require(digits.all { it.digitToIntOrNull(16) != null }) {
+                    "Invalid hexadecimal string: $value"
+                }
+
+                val words = ULongArray((digits.length + 15) / 16)
+                var wordIndex = 0
+                var end = digits.length
+                while (end > 0) {
+                    val start = max(0, end - 16)
+                    words[wordIndex++] = run {
+                        var value = 0UL
+                        for (ch in digits.substring(start, end)) {
+                            value = (value shl 4) or ch.digitToInt(16).toULong()
+                        }
+                        value
+                    }
+                    end = start
+                }
+                this.words = words.normalized()
+                this.isNegative = isNegative && !(words.size == 1 && words[0] == 0UL)
+            }
+
+            else -> throw IllegalArgumentException("Unsupported radix: $radix")
+        }
+    }
+
+    constructor(value: String) : this(value, 10)
+
     operator fun plus(other: BigInt): BigInt {
         if (this.isNegative == other.isNegative) {
             return BigInt(
@@ -117,6 +167,97 @@ class BigInt {
         val ZERO = BigInt(0)
         val ONE = BigInt(1)
         val TEN = BigInt(10)
+
+        private val DECIMAL_CHUNK_POWERS = uintArrayOf(
+            1u,
+            10u,
+            100u,
+            1_000u,
+            10_000u,
+            100_000u,
+            1_000_000u,
+            10_000_000u,
+            100_000_000u,
+            1_000_000_000u,
+        )
+
+        private fun parseSignedDigits(
+            value: String,
+            allowHexPrefix: Boolean = false,
+        ): Pair<Boolean, String> {
+            var body = value.trim()
+            require(body.isNotEmpty()) {
+                "Value must not be blank"
+            }
+
+            var sign: Char? = null
+
+            fun consumeSign() {
+                require(sign == null) {
+                    "Duplicate sign in: $value"
+                }
+                sign = body[0]
+                body = body.substring(1)
+                require(body.isNotEmpty()) {
+                    "Missing digits in: $value"
+                }
+            }
+
+            fun consumeHexPrefix() {
+                body = body.substring(2)
+                require(body.isNotEmpty()) {
+                    "Missing digits in: $value"
+                }
+            }
+
+            if (body[0] == '+' || body[0] == '-') {
+                consumeSign()
+            }
+            if (allowHexPrefix && body.startsWith("0x", ignoreCase = true)) {
+                consumeHexPrefix()
+            }
+            require(!(allowHexPrefix && (body[0] == '+' || body[0] == '-'))) {
+                "Malformed hexadecimal string: $value"
+            }
+
+            val digits = body.trimStart('0').ifEmpty { "0" }
+            return ((sign == '-') to digits)
+        }
+
+        private fun multiplyWordsByUInt(words: ULongArray, multiplier: UInt): ULongArray {
+            if (multiplier == 0u || words.size == 1 && words[0] == 0UL) {
+                return ulongArrayOf(0UL)
+            }
+
+            val dest = ULongArray(words.size + 1)
+            val multiplierULong = multiplier.toULong()
+            var carry = 0UL
+            for (i in words.indices) {
+                val product = DWord.fromProduct(words[i], multiplierULong)
+                val sum = DWord.fromSum(product.low, carry)
+                dest[i] = sum.low
+                carry = product.high + sum.high
+            }
+            dest[words.size] = carry
+            return dest.normalized()
+        }
+
+        private fun addUInt(words: ULongArray, addend: UInt): ULongArray {
+            if (addend == 0u) {
+                return words
+            }
+
+            val dest = words.copyOf(words.size + 1)
+            var carry = addend.toULong()
+            var index = 0
+            while (carry != 0UL && index < dest.size) {
+                val sum = DWord.fromSum(dest[index], carry)
+                dest[index] = sum.low
+                carry = sum.high
+                index++
+            }
+            return dest.normalized()
+        }
 
         private fun ULongArray.trailingZeroWordCount(): Int {
             for (i in indices) {
