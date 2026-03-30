@@ -2,13 +2,14 @@
 
 package org.ntqqrev.math
 
+import org.ntqqrev.math.util.toDecimalString
 import kotlin.math.max
 
 class BigInt {
     /**
      * Little-endian storage of words.
      */
-    private val words: ULongArray
+    internal val words: ULongArray
 
     /**
      * Whether this [BigInt] is negative.
@@ -82,6 +83,8 @@ class BigInt {
         }
     }
 
+    operator fun unaryMinus(): BigInt = ZERO.minus(this)
+
     operator fun times(other: BigInt): BigInt {
         if (this == ZERO || other == ZERO) {
             return ZERO
@@ -92,11 +95,7 @@ class BigInt {
         )
     }
 
-    fun toString(radix: Int): String {
-        TODO()
-    }
-
-    override fun toString(): String = toString(10)
+    override fun toString(): String = this.toDecimalString()
 
     override operator fun equals(other: Any?): Boolean {
         if (this === other) return true
