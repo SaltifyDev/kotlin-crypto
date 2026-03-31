@@ -1,6 +1,6 @@
 package org.ntqqrev.math
 
-internal data class DWord(
+data class DWord(
     val high: ULong,
     val low: ULong,
 ) {
