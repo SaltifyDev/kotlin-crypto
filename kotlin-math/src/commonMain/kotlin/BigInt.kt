@@ -21,7 +21,7 @@ class BigInt : Comparable<BigInt> {
         isNegative = false
     }
 
-    private constructor(words: ULongArray, isNegative: Boolean) {
+    constructor(words: ULongArray, isNegative: Boolean) {
         this.words = words
         this.isNegative = isNegative
     }
