@@ -5,7 +5,7 @@ package org.ntqqrev.math
 import org.ntqqrev.math.util.toDecimalString
 import kotlin.math.max
 
-class BigInt {
+class BigInt : Comparable<BigInt> {
     /**
      * Little-endian storage of words.
      */
@@ -143,6 +143,69 @@ class BigInt {
             words = multiplyWords(this.words, other.words),
             isNegative = this.isNegative xor other.isNegative,
         )
+    }
+
+    override operator fun compareTo(other: BigInt): Int {
+        if (isNegative != other.isNegative) {
+            return if (isNegative) -1 else 1
+        }
+
+        val magnitudeComparison = compareWords(words, other.words)
+        return if (isNegative) -magnitudeComparison else magnitudeComparison
+    }
+
+    fun abs(): BigInt = if (isNegative) {
+        BigInt(words, false)
+    } else {
+        this
+    }
+
+    fun bitLength(): Int {
+        if (this == ZERO) {
+            return 0
+        }
+        val magnitude = if (isNegative) {
+            subtractWords(words, ONE.words)
+        } else {
+            words
+        }
+        return magnitude.bitLength()
+    }
+
+    fun testBit(n: Int): Boolean {
+        require(n >= 0) {
+            "Bit index must not be negative: $n"
+        }
+        return if (isNegative) {
+            !subtractWords(words, ONE.words).testBitAt(n)
+        } else {
+            words.testBitAt(n)
+        }
+    }
+
+    infix fun shl(bitCount: Int): BigInt {
+        require(bitCount >= 0) {
+            "Shift count must not be negative: $bitCount"
+        }
+        if (bitCount == 0 || this == ZERO) {
+            return this
+        }
+        return BigInt(words.shiftWordsLeft(bitCount), isNegative)
+    }
+
+    infix fun shr(bitCount: Int): BigInt {
+        require(bitCount >= 0) {
+            "Shift count must not be negative: $bitCount"
+        }
+        if (bitCount == 0 || this == ZERO) {
+            return this
+        }
+        if (!isNegative) {
+            return BigInt(words.shiftWordsRight(bitCount), false)
+        }
+
+        val shiftedMagnitude = subtractWords(words, ONE.words).shiftWordsRight(bitCount)
+        return -(BigInt(shiftedMagnitude, false) + ONE)
     }
 
     override fun toString(): String = this.toDecimalString()
@@ -283,6 +346,23 @@ class BigInt {
             return this.copyOf(sizeToPreserve)
         }
 
+        private fun ULongArray.bitLength(): Int {
+            if (size == 1 && this[0] == 0UL) {
+                return 0
+            }
+            val mostSignificantWord = this[size - 1]
+            return (size - 1) * 64 + (64 - mostSignificantWord.countLeadingZeroBits())
+        }
+
+        private fun ULongArray.testBitAt(index: Int): Boolean {
+            val wordIndex = index / 64
+            if (wordIndex >= size) {
+                return false
+            }
+            val bitIndex = index % 64
+            return ((this[wordIndex] shr bitIndex) and 1UL) != 0UL
+        }
+
         private fun addWords(a: ULongArray, b: ULongArray): ULongArray {
             val n = max(a.size, b.size)
             val dest = ULongArray(n + 1)
@@ -353,6 +433,50 @@ class BigInt {
                     }
                 }
                 dest.addWordAt(i + b.size, carry)
+            }
+            return dest.normalized()
+        }
+
+        private fun ULongArray.shiftWordsLeft(bitCount: Int): ULongArray {
+            val wordShift = bitCount / 64
+            val bitShift = bitCount % 64
+            val dest = ULongArray(size + wordShift + if (bitShift == 0) 0 else 1)
+
+            if (bitShift == 0) {
+                for (i in indices) {
+                    dest[i + wordShift] = this[i]
+                }
+                return dest.normalized()
+            }
+
+            var carry = 0UL
+            for (i in indices) {
+                val word = this[i]
+                dest[i + wordShift] = (word shl bitShift) or carry
+                carry = word shr (64 - bitShift)
+            }
+            dest[size + wordShift] = carry
+            return dest.normalized()
+        }
+
+        private fun ULongArray.shiftWordsRight(bitCount: Int): ULongArray {
+            val wordShift = bitCount / 64
+            if (wordShift >= size) {
+                return ulongArrayOf(0UL)
+            }
+
+            val bitShift = bitCount % 64
+            val newSize = size - wordShift
+            if (bitShift == 0) {
+                return copyOfRange(wordShift, size).normalized()
+            }
+
+            val dest = ULongArray(newSize)
+            var carry = 0UL
+            for (i in newSize - 1 downTo 0) {
+                val word = this[i + wordShift]
+                dest[i] = (word shr bitShift) or carry
+                carry = word shl (64 - bitShift)
             }
             return dest.normalized()
         }
