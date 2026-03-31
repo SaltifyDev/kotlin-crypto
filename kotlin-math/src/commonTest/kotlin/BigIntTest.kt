@@ -4,6 +4,7 @@ import org.ntqqrev.math.util.toDecString
 import org.ntqqrev.math.util.toHexString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 class BigIntTest {
     @Test
@@ -86,5 +87,17 @@ class BigIntTest {
         assertEquals("0x10000000000000000", value.toHexString())
         assertEquals("-18446744073709551616", (-value).toDecString())
         assertEquals("-0x10000000000000000", (-value).toHexString())
+    }
+
+    @Test
+    fun equalValuesProduceEqualHashCodes() {
+        val decimal = BigInt("18446744073709551616")
+        val hex = BigInt("0x10000000000000000", 16)
+        val zeroFromString = BigInt("-0")
+
+        assertEquals(decimal, hex)
+        assertEquals(decimal.hashCode(), hex.hashCode())
+        assertEquals(BigInt.ZERO.hashCode(), zeroFromString.hashCode())
+        assertNotEquals(BigInt(42).hashCode(), BigInt(-42).hashCode())
     }
 }

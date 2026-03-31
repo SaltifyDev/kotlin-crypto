@@ -160,7 +160,11 @@ class BigInt {
     }
 
     override fun hashCode(): Int {
-        TODO()
+        var result = if (isNegative) 1 else 0
+        for (word in words) {
+            result = 31 * result + (word xor (word shr 32)).toInt()
+        }
+        return result
     }
 
     companion object {
