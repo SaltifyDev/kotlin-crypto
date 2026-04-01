@@ -35,6 +35,11 @@ class BigInt : Comparable<BigInt> {
 
     constructor(value: Int) : this(value.toLong())
 
+    constructor(value: ByteArray, endian: Endian = Endian.BE) {
+        words = value.toWords(endian)
+        isNegative = false
+    }
+
     constructor(value: String, radix: Int) {
         when (radix) {
             10 -> {
@@ -47,11 +52,11 @@ class BigInt : Comparable<BigInt> {
                 while (index < digits.length) {
                     val chunkEnd = minOf(index + 9, digits.length)
                     val chunk = digits.substring(index, chunkEnd)
-                    words = multiplyWordsByUInt(words, DECIMAL_CHUNK_POWERS[chunk.length])
-                    words = addUInt(words, chunk.toUInt())
+                    words = words.multiply(DECIMAL_CHUNK_POWERS[chunk.length])
+                    words = words.add(chunk.toUInt())
                     index = chunkEnd
                 }
-                this.words = words.normalized()
+                this.words = words
                 this.isNegative = isNegative && !(words.size == 1 && words[0] == 0UL)
             }
 
@@ -75,7 +80,7 @@ class BigInt : Comparable<BigInt> {
                     }
                     end = start
                 }
-                this.words = words.normalized()
+                this.words = words
                 this.isNegative = isNegative && !(words.size == 1 && words[0] == 0UL)
             }
 
@@ -235,117 +240,6 @@ class BigInt : Comparable<BigInt> {
         val ONE = BigInt(1)
         val TEN = BigInt(10)
 
-        private val DECIMAL_CHUNK_POWERS = uintArrayOf(
-            1u,
-            10u,
-            100u,
-            1_000u,
-            10_000u,
-            100_000u,
-            1_000_000u,
-            10_000_000u,
-            100_000_000u,
-            1_000_000_000u,
-        )
-
-        private fun parseSignedDigits(
-            value: String,
-            allowHexPrefix: Boolean = false,
-        ): Pair<Boolean, String> {
-            var body = value.trim()
-            require(body.isNotEmpty()) {
-                "Value must not be blank"
-            }
-
-            var sign: Char? = null
-
-            fun consumeSign() {
-                require(sign == null) {
-                    "Duplicate sign in: $value"
-                }
-                sign = body[0]
-                body = body.substring(1)
-                require(body.isNotEmpty()) {
-                    "Missing digits in: $value"
-                }
-            }
-
-            fun consumeHexPrefix() {
-                body = body.substring(2)
-                require(body.isNotEmpty()) {
-                    "Missing digits in: $value"
-                }
-            }
-
-            if (body[0] == '+' || body[0] == '-') {
-                consumeSign()
-            }
-            if (allowHexPrefix && body.startsWith("0x", ignoreCase = true)) {
-                consumeHexPrefix()
-            }
-            require(!(allowHexPrefix && (body[0] == '+' || body[0] == '-'))) {
-                "Malformed hexadecimal string: $value"
-            }
-
-            val digits = body.trimStart('0').ifEmpty { "0" }
-            return ((sign == '-') to digits)
-        }
-
-        private fun multiplyWordsByUInt(words: ULongArray, multiplier: UInt): ULongArray {
-            if (multiplier == 0u || words.size == 1 && words[0] == 0UL) {
-                return ulongArrayOf(0UL)
-            }
-
-            val dest = ULongArray(words.size + 1)
-            val multiplierULong = multiplier.toULong()
-            var carry = 0UL
-            for (i in words.indices) {
-                val product = DWord.fromProduct(words[i], multiplierULong)
-                val sum = DWord.fromSum(product.low, carry)
-                dest[i] = sum.low
-                carry = product.high + sum.high
-            }
-            dest[words.size] = carry
-            return dest.normalized()
-        }
-
-        private fun addUInt(words: ULongArray, addend: UInt): ULongArray {
-            if (addend == 0u) {
-                return words
-            }
-
-            val dest = words.copyOf(words.size + 1)
-            var carry = addend.toULong()
-            var index = 0
-            while (carry != 0UL && index < dest.size) {
-                val sum = DWord.fromSum(dest[index], carry)
-                dest[index] = sum.low
-                carry = sum.high
-                index++
-            }
-            return dest.normalized()
-        }
-
-        private fun ULongArray.trailingZeroWordCount(): Int {
-            for (i in indices) {
-                if (this[size - i - 1] != 0UL) {
-                    return i
-                }
-            }
-            return size
-        }
-
-        /**
-         * Get a copy of the array with trailing zeros removed,
-         * unless the only one element of the array is `0UL`.
-         * If there is nothing to normalize, the method returns the array itself.
-         */
-        private fun ULongArray.normalized(): ULongArray {
-            val sizeToPreserve: Int = max(1, size - trailingZeroWordCount())
-            if (sizeToPreserve == size) return this
-            return this.copyOf(sizeToPreserve)
-        }
-
         private fun ULongArray.bitLength(): Int {
             if (size == 1 && this[0] == 0UL) {
                 return 0
@@ -434,7 +328,11 @@ class BigInt : Comparable<BigInt> {
                 }
                 dest.addWordAt(i + b.size, carry)
             }
-            return dest.normalized()
+            return if (dest[n - 1] == 0UL) {
+                dest.copyOf(n - 1)
+            } else {
+                dest
+            }
         }
 
         private fun ULongArray.shiftWordsLeft(bitCount: Int): ULongArray {
@@ -446,7 +344,7 @@ class BigInt : Comparable<BigInt> {
                 for (i in indices) {
                     dest[i + wordShift] = this[i]
                 }
-                return dest.normalized()
+                return dest
             }
 
             var carry = 0UL
@@ -456,7 +354,11 @@ class BigInt : Comparable<BigInt> {
                 carry = word shr (64 - bitShift)
             }
             dest[size + wordShift] = carry
-            return dest.normalized()
+            return if (carry == 0UL) {
+                dest.copyOf(size + wordShift)
+            } else {
+                dest
+            }
         }
 
         private fun ULongArray.shiftWordsRight(bitCount: Int): ULongArray {
@@ -468,7 +370,7 @@ class BigInt : Comparable<BigInt> {
             val bitShift = bitCount % 64
             val newSize = size - wordShift
             if (bitShift == 0) {
-                return copyOfRange(wordShift, size).normalized()
+                return copyOfRange(wordShift, size)
             }
 
             val dest = ULongArray(newSize)
@@ -478,7 +380,11 @@ class BigInt : Comparable<BigInt> {
                 dest[i] = (word shr bitShift) or carry
                 carry = word shl (64 - bitShift)
             }
-            return dest.normalized()
+            return when {
+                dest[newSize - 1] != 0UL -> dest
+                newSize == 1 -> ulongArrayOf(0UL)
+                else -> dest.copyOf(newSize - 1)
+            }
         }
 
         private fun ULongArray.addWordAt(index: Int, value: ULong) {
@@ -489,6 +395,48 @@ class BigInt : Comparable<BigInt> {
                 this[i] = sum.low
                 carry = sum.high
                 i++
+            }
+        }
+
+        private fun ULongArray.add(addend: UInt): ULongArray {
+            if (addend == 0u) {
+                return this
+            }
+
+            val dest = copyOf(size + 1)
+            var carry = addend.toULong()
+            var index = 0
+            while (carry != 0UL && index < dest.size) {
+                val sum = DWord.fromSum(dest[index], carry)
+                dest[index] = sum.low
+                carry = sum.high
+                index++
+            }
+            return if (dest[size] == 0UL) {
+                dest.copyOf(size)
+            } else {
+                dest
+            }
+        }
+
+        private fun ULongArray.multiply(multiplier: UInt): ULongArray {
+            if (multiplier == 0u || size == 1 && this[0] == 0UL) {
+                return ulongArrayOf(0UL)
+            }
+            val dest = ULongArray(size + 1)
+            val multiplierULong = multiplier.toULong()
+            var carry = 0UL
+            for (i in indices) {
+                val product = DWord.fromProduct(this[i], multiplierULong)
+                val sum = DWord.fromSum(product.low, carry)
+                dest[i] = sum.low
+                carry = product.high + sum.high
+            }
+            dest[size] = carry
+            return if (carry == 0UL) {
+                dest.copyOf(size)
+            } else {
+                dest
             }
         }
 
@@ -503,6 +451,120 @@ class BigInt : Comparable<BigInt> {
                 }
             }
             return 0
+        }
+
+
+        private val DECIMAL_CHUNK_POWERS = uintArrayOf(
+            1u,
+            10u,
+            100u,
+            1_000u,
+            10_000u,
+            100_000u,
+            1_000_000u,
+            10_000_000u,
+            100_000_000u,
+            1_000_000_000u,
+        )
+
+        private fun parseSignedDigits(
+            value: String,
+            allowHexPrefix: Boolean = false,
+        ): Pair<Boolean, String> {
+            var body = value.trim()
+            require(body.isNotEmpty()) {
+                "Value must not be blank"
+            }
+
+            var sign: Char? = null
+
+            fun consumeSign() {
+                require(sign == null) {
+                    "Duplicate sign in: $value"
+                }
+                sign = body[0]
+                body = body.substring(1)
+                require(body.isNotEmpty()) {
+                    "Missing digits in: $value"
+                }
+            }
+
+            fun consumeHexPrefix() {
+                body = body.substring(2)
+                require(body.isNotEmpty()) {
+                    "Missing digits in: $value"
+                }
+            }
+
+            if (body[0] == '+' || body[0] == '-') {
+                consumeSign()
+            }
+            if (allowHexPrefix && body.startsWith("0x", ignoreCase = true)) {
+                consumeHexPrefix()
+            }
+            require(!(allowHexPrefix && (body[0] == '+' || body[0] == '-'))) {
+                "Malformed hexadecimal string: $value"
+            }
+
+            val digits = body.trimStart('0').ifEmpty { "0" }
+            return ((sign == '-') to digits)
+        }
+
+        private fun ByteArray.toWords(endian: Endian): ULongArray {
+            if (isEmpty()) {
+                return ulongArrayOf(0UL)
+            }
+
+            when (endian) {
+                Endian.BE -> {
+                    var first = 0
+                    while (first < size && this[first] == 0.toByte()) {
+                        first++
+                    }
+                    if (first == size) {
+                        return ulongArrayOf(0UL)
+                    }
+
+                    val words = ULongArray((size - first + 7) / 8)
+                    var wordIndex = 0
+                    var end = size
+                    while (end > first) {
+                        val start = max(first, end - 8)
+                        var word = 0UL
+                        for (i in start until end) {
+                            word = (word shl 8) or this[i].toUByte().toULong()
+                        }
+                        words[wordIndex++] = word
+                        end = start
+                    }
+                    return words
+                }
+
+                Endian.LE -> {
+                    var endExclusive = size
+                    while (endExclusive > 0 && this[endExclusive - 1] == 0.toByte()) {
+                        endExclusive--
+                    }
+                    if (endExclusive == 0) {
+                        return ulongArrayOf(0UL)
+                    }
+
+                    val words = ULongArray((endExclusive + 7) / 8)
+                    var wordIndex = 0
+                    var start = 0
+                    while (start < endExclusive) {
+                        val end = minOf(start + 8, endExclusive)
+                        var word = 0UL
+                        for (i in start until end) {
+                            val shift = (i - start) * 8
+                            word = word or (this[i].toUByte().toULong() shl shift)
+                        }
+                        words[wordIndex++] = word
+                        start = end
+                    }
+                    return words
+                }
+            }
         }
     }
 }

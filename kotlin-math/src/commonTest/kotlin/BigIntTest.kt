@@ -28,6 +28,31 @@ class BigIntTest {
     }
 
     @Test
+    fun parsesByteArraysInBigAndLittleEndian() {
+        assertEquals(
+            "0x123456789abcdef",
+            BigInt(byteArrayOf(0x01, 0x23, 0x45, 0x67, 0x89.toByte(), 0xab.toByte(), 0xcd.toByte(), 0xef.toByte())).toHexString(),
+        )
+        assertEquals(
+            "0x123456789abcdef",
+            BigInt(
+                byteArrayOf(0xef.toByte(), 0xcd.toByte(), 0xab.toByte(), 0x89.toByte(), 0x67, 0x45, 0x23, 0x01),
+                Endian.LE,
+            ).toHexString(),
+        )
+        assertEquals(
+            "0x1234",
+            BigInt(byteArrayOf(0x00, 0x00, 0x12, 0x34)).toHexString(),
+        )
+        assertEquals(
+            "0x1234",
+            BigInt(byteArrayOf(0x34, 0x12, 0x00, 0x00), Endian.LE).toHexString(),
+        )
+        assertEquals(BigInt.ZERO, BigInt(byteArrayOf()))
+        assertEquals(BigInt.ZERO, BigInt(byteArrayOf(0x00, 0x00)))
+    }
+
+    @Test
     fun multipliesZeroAndSignedValues() {
         val value = BigInt(123456789)
 
